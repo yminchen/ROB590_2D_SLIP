@@ -1,1 +1,1 @@
-# 2D_SLIP
+# This is a simple example built towards bipadel robot simulation.
