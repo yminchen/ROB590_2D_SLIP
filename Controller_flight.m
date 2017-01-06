@@ -30,11 +30,11 @@ elseif phi_tar < -max_phi_tar
     phi_tar = -max_phi_tar;
 end
 
-%phi_tar = 1; % for tuning the next PD controller
+% phi_tar = 1; % for tuning the next PD controller
 
 % PD controller parameters
-kp = 50;   % 1.5
-kd = 5;   % 1.2
+kp = 10;   % 1.5
+kd = 1.7;   % 1.2
 % PD controller for desired phi.
 err = x(5) - phi_tar;
 derr =  x(6);     

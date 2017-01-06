@@ -23,19 +23,20 @@ moviename = 'SLIP_2D.avi';  % avi file name for VideoWriter
 
 % system parameters
 m = 1;              % point mass (kg)
-L = 1;              % spring length (m)
-k = 200;            % spring constant    
-                        % higher stiffness improves stability!
-                        % (I can't tune raibert controller when k=100.)
+L = 0.7;            % spring length (m)
+k = 2000;           % spring constant    
+        % higher stiffness improves stability.
+        % if you want higher speed, you need higher k.
 d = 10;             % spring damping 
 g = 9.81;           % gravitational constant (m/s^2)
 
 % controller parameters
 thrust_flag = 0;
-target_pos = 10;
-t_prev_stance = 0.4/(k/100);
-H = 2;              % desired height (effecting kp_rai and kp_pos!)
-max_dx_des = 2;     % maximum of desired speed
+target_pos = 3;
+t_prev_stance = 0.2/(k/100);
+H = 1;              % desired height (effecting kp_rai and kp_pos!)
+max_dx_des = 2;     % maximum of desired speed (not real speed)
+        % max_dx_des can go to 8 or higher, but then it also jumps higher.
 dx_des = 0;         % desired speed (initialized to be 0)
 E_low = 0;          % SLIP energy at lowest point (initialized to be 0)
 E_des = 0;          % SLIP desired energy (initialized to be 0)
@@ -44,15 +45,17 @@ x_td = 0;           % state vector at previous touchdown
 prev_t =0;
 % Raibert controller parameter
 kp_pos = 2;       % position control
-kp_rai = 0.04;       % Raibert sytle controller
+        % kp_pos depends on max_dx_des.
+kp_rai = 0.04;    % Raibert sytle controller
         % kp_rai depends on H (the height) and k (the stiffness).
         % For larger desired speed, you need higher kp_rai.
         % But the larger kp_rai is, the more unstable when changing speed.
+        % When it's stable enough, you can try to increase max_dx_des.
 k_f = [kp_pos kp_rai];  % f stands for flight
 
 % simulation parameters
 T0 = 0;
-Tf = 20;
+Tf = 8;
 % ode45 events parameters
 t_evmax = 1;
 % initial simulation parameters
@@ -64,7 +67,7 @@ tspan = T0:tstep:t_evmax;   % initial time vector
 % initial state  
 x0 = [  0
         0 
-        2
+        1.2
         0
         0
         0]';        
@@ -269,7 +272,7 @@ if fflag
     plot(T,X(:,6),'c','LineWidth',2);
     legend('phi (rad)', 'dphi (rad/s)');
     title('\fontsize{12}\fontname{Arial Black}Angle plot');
-    axis([0 T(size(T,1)) -3.5 3.5]);
+    axis([0 T(size(T,1)) -2 2]);
     
     figure;
     plot(X(:,1),X(:,3),'b','LineWidth',2);
