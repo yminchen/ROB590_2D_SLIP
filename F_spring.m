@@ -1,4 +1,4 @@
-function dx = F_spring(t,x,m,k,L,d,E,H,contact_pos,thrust_flag,l_spr_low, dx_des)
+function dx = F_spring(t,x,m,k,L,d,contact_pos,thrust_flag,L_low,E_des,E_low)
 % Derivative function for a 2D SLIP model.
 %
 % States:
@@ -12,18 +12,20 @@ dx = zeros(6,1);
 
 % system parameters:
 g = 9.81;                       % gravitational constant (m/s^2)
+
+% current length of spring (m)
 l_spring = sum(([x(1);x(3)]-contact_pos).^2)^0.5;    
-                                % current length of spring (m)
+% current energy
+E = m*g*x(3) + 0.5*m*(x(2)^2+(x(4))^2) + 0.5*k*(L-l_spring)^2;   
+                                
 % change rate of spring length (m/s)
 cx = x(1) - contact_pos(1);
 cy = x(3) - contact_pos(2);
 dL = (cx*x(2)+cy*x(4))/(cx^2+cy^2)^0.5;
 
-% Controller for stance phase   % This needs to be modified.
-E_des = m*g*H + d*dL*(L-l_spr_low) + 0.5*m*dx_des^2; % desired energy
+% Controller for stance phase   
 if thrust_flag && (E_des > E) 
-    F_ctrl = (E_des-E)/(L-l_spr_low);
-%     F_ctrl = (E_des-E)*10;
+    F_ctrl = (E_des-E_low)/(L-L_low);
 else
     F_ctrl = 0;
 end

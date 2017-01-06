@@ -18,8 +18,10 @@ fflag = 1;          % flag to enable figure plot (don't enable this with animati
 aflag = not(fflag); % flag to enable animation creation
 vflag = not(fflag); % flag to enable animation recording (create a avi video)
 fignum = 1;         % figure number
-subplotFlag = 0;    % flag to enable animation subplot
 moviename = 'SLIP_2D.avi';  % avi file name for VideoWriter
+subplotFlag = 0;    % flag to enable animation subplot
+xy_cor_flag = 0;    % flag to enable using x-y coordinate for ode45 during stance phase
+
 
 % system parameters
 m = 1;              % point mass (kg)
@@ -32,7 +34,7 @@ g = 9.81;           % gravitational constant (m/s^2)
 
 % controller parameters
 thrust_flag = 0;
-target_pos = 3;
+target_pos = 10;
 t_prev_stance = 0.2/(k/100);
 H = 1;              % desired height (effecting kp_rai and kp_pos!)
 max_dx_des = 2;     % maximum of desired speed (not real speed)
@@ -43,19 +45,21 @@ E_des = 0;          % SLIP desired energy (initialized to be 0)
 L_low = 0;          % spring length when mass reaches lowest height 
 x_td = 0;           % state vector at previous touchdown 
 prev_t =0;
-% Raibert controller parameter
-kp_pos = 2;       % position control
+% position controller parameters
+kp_pos = 2;       
         % kp_pos depends on max_dx_des.
+kd_pos = 1.5;
+% Raibert controller parameter
 kp_rai = 0.04;    % Raibert sytle controller
         % kp_rai depends on H (the height) and k (the stiffness).
         % For larger desired speed, you need higher kp_rai.
         % But the larger kp_rai is, the more unstable when changing speed.
         % When it's stable enough, you can try to increase max_dx_des.
-k_f = [kp_pos kp_rai];  % f stands for flight
+k_f = [kp_pos kd_pos kp_rai];  % f stands for flight
 
 % simulation parameters
 T0 = 0;
-Tf = 8;
+Tf = 15;
 % ode45 events parameters
 t_evmax = 1;
 % initial simulation parameters
@@ -133,7 +137,8 @@ while T(size(T,1)) < Tf
             % transition info
             prev_t = t(n);
             % flight controller info
-            dx_des = -k_f(1)*((x(n,1)+x(n,2)*t_prev_stance/2)-target_pos);
+            dx_des = -k_f(1)*((x(n,1)+x(n,2)*t_prev_stance/2)-target_pos)...
+                     -k_f(2)*x(n,2);
             if dx_des>max_dx_des
                 dx_des = max_dx_des;
             elseif dx_des<-max_dx_des
@@ -141,49 +146,64 @@ while T(size(T,1)) < Tf
             end
             % state vector at touch down
             x_td = x(n,:);
+            
+            % if use x-y coordinate for stance phase
+            if xy_cor_flag
+                % update the initial condition for angular velocity when hiting
+                % the ground
+                cx = X(lenX,1) - contact_pos(1); 
+                cy = X(lenX,3) - contact_pos(2);
+                x0(6) = (-X(lenX,2)*cos(X(lenX,5))-X(lenX,4)*sin(X(lenX,5)))/((cx^2+cy^2)^0.5) ;
+            end
         end
-
+        
     %%% stance phase %%%
     elseif phase == 1
         
-%         if thrust_flag
-%             options = odeset('Events', @(t,x) EventsFcn_Tstance(t,x,L));
-%         else
-%             options = odeset('Events', @(t,x) EventsFcn_Cstance(t,x,L));
-%         end
-%         [t,x,te,xe,ie] = ode45(@(t,x) F_spring(t,x,m,k,L,d,E,H,...
-%             contact_pos,thrust_flag,L_low,dx_des), tspan, x0, options);
+        % if use x-y coordinate for stance phase
+        if xy_cor_flag
+            if thrust_flag
+                options = odeset('Events', @(t,x) EventsFcn_Tstance(t,x,L));
+            else
+                options = odeset('Events', @(t,x) EventsFcn_Cstance(t,x,L));
+            end
+            [t,x,te,xe,ie] = ode45(@(t,x) F_spring(t,x,m,k,L,d,...
+                contact_pos,thrust_flag,L_low,E_des,E_low), tspan, x0, options);
+            n = size(x,1);
         
-        if thrust_flag
-            options = odeset('Events', @(t,x) EventsFcn_Tstance_rad_tan(t,x,L));
+        % if use rad-tan coordinate for stance phase
         else
-            options = odeset('Events', @(t,x) EventsFcn_Cstance_rad_tan(t,x));
+            if thrust_flag
+                options = odeset('Events', @(t,x) EventsFcn_Tstance_rad_tan(t,x,L));
+            else
+                options = odeset('Events', @(t,x) EventsFcn_Cstance_rad_tan(t,x));
+            end
+
+            % transform to radius-tangent coordinate
+            cx = X(lenX,1) - contact_pos(1); 
+            cy = X(lenX,3) - contact_pos(2);
+            x0 = [  (cx^2+cy^2)^0.5 
+                    -X(lenX,2)*sin(X(lenX,5))+X(lenX,4)*cos(X(lenX,5))      % equivalent to: (cx*X(lenX,2)+cy*X(lenX,4))/(cx^2+cy^2)^0.5
+                    X(lenX,5)
+                    (-X(lenX,2)*cos(X(lenX,5))-X(lenX,4)*sin(X(lenX,5)))/((cx^2+cy^2)^0.5 )]';
+                %   x0(1):   spring length (meter)
+                %   x0(2):   spring velocity (meter/sec)
+                %   x0(3):   angle (rad) between spring and verticle line. (To the right is positive)
+                %   x0(4):   angular velocity (rad/s) of the angle mentioned above 
+
+            % ode45
+            [t,x,te,xe,ie] = ode45(@(t,x) F_spring_rad_tan(t,x,m,k,L,d,...
+                thrust_flag,L_low,E_des,E_low), tspan, x0, options);
+            n = size(x,1);
+
+            % transform to x-y coordinate
+            x = [   contact_pos(1) - x(:,1).*sin(x(:,3)),...
+                    -x(:,2).*sin(x(:,3))-x(:,1).*x(:,4).*cos(x(:,3)),...
+                    x(:,1).*cos(x(:,3)),...
+                    +x(:,2).*cos(x(:,3))-x(:,1).*x(:,4).*sin(x(:,3)),...
+                    x(:,3),...
+                    x(:,4)];
         end
-        
-        % transform to radius-tangent coordinate
-        cx = X(lenX,1) - contact_pos(1); 
-        cy = X(lenX,3) - contact_pos(2);
-        x0 = [  (cx^2+cy^2)^0.5 
-                -X(lenX,2)*sin(X(lenX,5))+X(lenX,4)*cos(X(lenX,5))      % equivalent to: (cx*X(lenX,2)+cy*X(lenX,4))/(cx^2+cy^2)^0.5
-                X(lenX,5)
-                -X(lenX,2)*cos(X(lenX,5))-X(lenX,4)*sin(X(lenX,5))]';
-            %   x0(1):   spring length (meter)
-            %   x0(2):   spring velocity (meter/sec)
-            %   x0(3):   angle (rad) between spring and verticle line. (To the right is positive)
-            %   x0(4):   angular velocity (rad/s) of the angle mentioned above 
-        
-        % ode45
-        [t,x,te,xe,ie] = ode45(@(t,x) F_spring_rad_tan(t,x,m,k,L,d,...
-            thrust_flag,L_low,E_des,E_low), tspan, x0, options);
-        n = size(x,1);
-        
-        % transform to x-y coordinate
-        x = [   contact_pos(1) - x(:,1).*sin(x(:,3)),...
-                -x(:,2).*sin(x(:,3))-x(:,1).*x(:,4).*cos(x(:,3)),...
-                x(:,1).*cos(x(:,3)),...
-                +x(:,2).*cos(x(:,3))-x(:,1).*x(:,4).*sin(x(:,3)),...
-                x(:,3),...
-                x(:,4)];
         
         % assign output
         X(lenX:lenX+n-1, :) = x;
@@ -265,7 +285,9 @@ if fflag
         'phi (rad)', 'dphi (rad/s)', 'xPos_{des} (m/s)');
     xlabel('\fontsize{10}\fontname{Arial Black} Time(s)');
     text(1,9,['\fontsize{10}\fontname{Arial Black}kp_{pos}: ' num2str(k_f(1),'%1.2f')], 'Color','red');
-    text(1,8.5,['\fontsize{10}\fontname{Arial Black}kp_{rai} : ' num2str(k_f(2),'%1.2f')], 'Color','red');
+    text(1,8.5,['\fontsize{10}\fontname{Arial Black}kd_{pos} : ' num2str(k_f(2),'%1.2f')], 'Color','red');
+    text(1,8,['\fontsize{10}\fontname{Arial Black}kp_{rai} : ' num2str(k_f(3),'%1.2f')], 'Color','red');
+%     axis([0 T(size(T,1)) 0 2]);
     
     figure;
     plot(T,X(:,5),'m','LineWidth',2);hold on;

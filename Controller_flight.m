@@ -8,8 +8,9 @@ F = zeros(2,1);
 
 % Position controller parameters
 kp_pos = k_f(1);
-% Position controller
-dx_des = -kp_pos*(x(1)-target_pos);
+kd_pos = k_f(2);
+% Position controller (PD control)
+dx_des = -kp_pos*(x(1)-target_pos) - kd_pos*x(2); % target_pos is fixed.
 if dx_des>max_dx_des
     dx_des = max_dx_des;
 elseif dx_des<-max_dx_des
@@ -19,7 +20,7 @@ end
 %dx_des = 2; % for tuning kp_rai
 
 % Raibert style controller parameters
-kp_rai = k_f(2);
+kp_rai = k_f(3);
 max_phi_tar = 50*pi/180;
 % Raibert style controller
 x_des = x(2)*t_prev_stance/2 + kp_rai*(x(2)-dx_des);
