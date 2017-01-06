@@ -14,10 +14,9 @@ g = 9.81;                       % gravitational constant (m/s^2)
 % current energy
 E = m*g*x(1)*cos(x(3)) + 0.5*m*(x(2)^2+(x(1)*x(4))^2) + 0.5*k*(L-x(1))^2;   
 
-% Controller for stance phase   % This needs to be modified.
+% Controller for stance phase   
 if thrust_flag && (E_des > E) 
     F_ctrl = (E_des-E_low)/(L-L_low);
-%     F_ctrl = (E_des-E)*10;
 else
     F_ctrl = 0;
 end
