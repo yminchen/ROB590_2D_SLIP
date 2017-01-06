@@ -16,6 +16,8 @@ elseif dx_des<-max_dx_des
     dx_des = -max_dx_des;
 end
 
+%dx_des = 2; % for tuning kp_rai
+
 % Raibert style controller parameters
 kp_rai = k_f(2);
 max_phi_tar = 50*pi/180;
@@ -28,9 +30,11 @@ elseif phi_tar < -max_phi_tar
     phi_tar = -max_phi_tar;
 end
 
+%phi_tar = 1; % for tuning the next PD controller
+
 % PD controller parameters
-kp = 25;   % 1.5
-kd = 20;   % 1.2
+kp = 50;   % 1.5
+kd = 5;   % 1.2
 % PD controller for desired phi.
 err = x(5) - phi_tar;
 derr =  x(6);     

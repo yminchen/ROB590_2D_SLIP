@@ -8,7 +8,7 @@
 % "Simulation and Animation of a Linear and Nonlinear Pendulum Model"
 % written by 
 % James T. Allison, Assistant Professor, University of Illinois at
-% Urbana-Champaign,
+% Urbana-Champaign.
 
 
 %% INITIALIZATION:
@@ -34,27 +34,32 @@ g = 9.81;           % gravitational constant (m/s^2)
 thrust_flag = 0;
 target_pos = 10;
 t_prev_stance = 0.4/(k/100);
-H = 3;              % desired height
+H = 2;              % desired height (effecting kp_rai and kp_pos!)
 max_dx_des = 2;     % maximum of desired speed
-dx_des = 0;         % desired speed (initialization)
-E = 0;              % SLIP energy (initialization)
-l_spr_low = 0;      % spring length when mass reaches lowest height 
+dx_des = 0;         % desired speed (initialized to be 0)
+E_low = 0;          % SLIP energy at lowest point (initialized to be 0)
+E_des = 0;          % SLIP desired energy (initialized to be 0)
+L_low = 0;          % spring length when mass reaches lowest height 
+x_td = 0;           % state vector at previous touchdown 
 prev_t =0;
 % Raibert controller parameter
-kp_pos = 0.3;      % position control
-kp_rai = 0.1;       % Raibert sytle controller
-        % 0.07 good, 0.1 much better (this might depend on spring stiffness)
+kp_pos = 2;       % position control
+kp_rai = 0.04;       % Raibert sytle controller
+        % kp_rai depends on H (the height) and k (the stiffness).
         % For larger desired speed, you need higher kp_rai.
+        % But the larger kp_rai is, the more unstable when changing speed.
 k_f = [kp_pos kp_rai];  % f stands for flight
 
 % simulation parameters
 T0 = 0;
 Tf = 20;
+% ode45 events parameters
+t_evmax = 1;
 % initial simulation parameters
-t0 = T0;            % initial time (s)
-tf = 0.01;          % final time (s) 
-tstep = 0.01;       % time increment (s)
-tspan = t0:tstep:tf;% time vector
+tstep = 0.01;               % time increment (s)
+tspan = T0:tstep:t_evmax;   % initial time vector
+            % Including intermidiate time allows us to fix the 
+            % length of ode output. 
 
 % initial state  
 x0 = [  0
@@ -63,14 +68,13 @@ x0 = [  0
         0
         0
         0]';        
-%   x(1):   x - position (meter)
-%   x(2):   x - velocity (meter/sec)
-%   x(3):   y - position
-%   x(4):   y - velocity
-%   x(5):   angle (rad) between spring and verticle line. (To the right is positive)
-%   x(6):   angular velocity (rad/s) of the angle mentioned above 
-% PS: x0 is a row vector.
-X0 = x0;
+    %   x(1):   x - position (meter)
+    %   x(2):   x - velocity (meter/sec)
+    %   x(3):   y - position
+    %   x(4):   y - velocity
+    %   x(5):   angle (rad) between spring and verticle line. (To the right is positive)
+    %   x(6):   angular velocity (rad/s) of the angle mentioned above 
+    % PS: x0 is a row vector.
 
 % contact position of spring and ground
 contact_pos = zeros(2,1);
@@ -79,12 +83,12 @@ contact_pos = zeros(2,1);
 phase = 0;          % 0: flight phase 
                     % 1: stance phase
                     
-% output parameters
-total_time = Tf;                % (sec) 
-total_loop = total_time/tf;           
-T = zeros(total_loop+1, 1);     % t_output
-X = [T T T T T T];              % x_output
+% output parameters        
+T = zeros(0,0);     % t_output (will have one column)
+T(1,1) = T0;
+X = zeros(0,0);     % x_output (will have six columns)
 X(1,:) = x0;
+lenX = 1;           % the number of rows of x_output 
                     
 % plotting parameters
 line_height = 7;
@@ -94,107 +98,140 @@ if fflag
     figure;
 end 
 
-% for testing
-% [t, x] = ode45('F_nonlin_spring',tspan,x0);
-% % [t, x] = ode45('F_nonlin_freefall',tspan,x0);
-% plot(tspan,x(:,1));
-% hold on;
-% plot(tspan,x(:,2));
 
 %% SIMULATION:
 
-i_loop = 1;
-while i_loop < total_loop + 1
+while T(size(T,1)) < Tf
     %%% flight phase %%%
     if phase == 0 
         
-        [t, x] = ode45(@(t,x) F_freefall(t,x,L,...
-            t_prev_stance,target_pos,k_f,max_dx_des), tspan, x0);
+        options = odeset('Events', @(t,x) EventsFcn_flight(t,x,L));
+        [t,x,te,xe,ie] = ode45(@(t,x) F_freefall(t,x,L,...
+            t_prev_stance,target_pos,k_f,max_dx_des), tspan, x0, options);
         
         n = size(x,1);
         % assign output
-        X(i_loop+1, :) = x(n, :);
-        T(i_loop+1, :) = [tspan(2)];
+        X(lenX:lenX+n-1, :) = x;
+        T(lenX:lenX+n-1, :) = t;
 
         % update the time info and initial state for ode45
-        t0 = tf;
-        tf = tf + tstep;
-        tspan = t0:tstep:tf;
+        lenX = lenX + n-1;
+        tspan = t(n) : tstep : t(n)+t_evmax;
         x0 = x(n, :);
         
         % If it's hitting the ground, switch to stance phase.
-        if x(n,3) - L*cos(x(n,5)) < 0
+        if size(te,1)>0 
             phase = 1;
             % print
             display('switch to stance compression phase');
             
             % contact point
-            contact_pos = [x(n,1) + x(n,3)*sin(x(n,5)); 0];
+            contact_pos = [x(n,1) + L*sin(x(n,5)); 0];
             % transition info
-            prev_t = tspan(1);
+            prev_t = t(n);
             % flight controller info
-            dx_des = -k_f(1)*(x(n,1)-target_pos);
+            dx_des = -k_f(1)*((x(n,1)+x(n,2)*t_prev_stance/2)-target_pos);
             if dx_des>max_dx_des
                 dx_des = max_dx_des;
             elseif dx_des<-max_dx_des
                 dx_des = -max_dx_des;
             end
+            % state vector at touch down
+            x_td = x(n,:);
         end
 
-    %%% stance compression phase %%%
+    %%% stance phase %%%
     elseif phase == 1
         
-        [t, x] = ode45(@(t,x) F_spring_wDamp(t,x,m,k,L,d,E,H,...
-            contact_pos,thrust_flag,l_spr_low,dx_des), tspan, x0);
+%         if thrust_flag
+%             options = odeset('Events', @(t,x) EventsFcn_Tstance(t,x,L));
+%         else
+%             options = odeset('Events', @(t,x) EventsFcn_Cstance(t,x,L));
+%         end
+%         [t,x,te,xe,ie] = ode45(@(t,x) F_spring(t,x,m,k,L,d,E,H,...
+%             contact_pos,thrust_flag,L_low,dx_des), tspan, x0, options);
         
+        if thrust_flag
+            options = odeset('Events', @(t,x) EventsFcn_Tstance_rad_tan(t,x,L));
+        else
+            options = odeset('Events', @(t,x) EventsFcn_Cstance_rad_tan(t,x));
+        end
+        
+        % transform to radius-tangent coordinate
+        cx = X(lenX,1) - contact_pos(1); 
+        cy = X(lenX,3) - contact_pos(2);
+        x0 = [  (cx^2+cy^2)^0.5 
+                -X(lenX,2)*sin(X(lenX,5))+X(lenX,4)*cos(X(lenX,5))      % equivalent to: (cx*X(lenX,2)+cy*X(lenX,4))/(cx^2+cy^2)^0.5
+                X(lenX,5)
+                -X(lenX,2)*cos(X(lenX,5))-X(lenX,4)*sin(X(lenX,5))]';
+            %   x0(1):   spring length (meter)
+            %   x0(2):   spring velocity (meter/sec)
+            %   x0(3):   angle (rad) between spring and verticle line. (To the right is positive)
+            %   x0(4):   angular velocity (rad/s) of the angle mentioned above 
+        
+        % ode45
+        [t,x,te,xe,ie] = ode45(@(t,x) F_spring_rad_tan(t,x,m,k,L,d,...
+            thrust_flag,L_low,E_des,E_low), tspan, x0, options);
         n = size(x,1);
-        % overwrite angle (not using ODE to get angle directly...)
-        x(1,5) = atan((contact_pos(1)-x(1,1))/(x(1,3)-contact_pos(2)));
-        x(n,5) = atan((contact_pos(1)-x(n,1))/(x(n,3)-contact_pos(2)));
-        x(n,6) = (x(n,5)-x(1,5))/tstep;
-        % assign output
-        X(i_loop+1, :) = x(n, :);
-        T(i_loop+1, :) = [tspan(2)];
-
-        % update the time info and initial state for ode45
-        t0 = tf;
-        tf = tf + tstep;
-        tspan = t0:tstep:tf;
-        x0 = x(n, :);
         
+        % transform to x-y coordinate
+        x = [   contact_pos(1) - x(:,1).*sin(x(:,3)),...
+                -x(:,2).*sin(x(:,3))-x(:,1).*x(:,4).*cos(x(:,3)),...
+                x(:,1).*cos(x(:,3)),...
+                +x(:,2).*cos(x(:,3))-x(:,1).*x(:,4).*sin(x(:,3)),...
+                x(:,3),...
+                x(:,4)];
+        
+        % assign output
+        X(lenX:lenX+n-1, :) = x;
+        T(lenX:lenX+n-1, :) = t;
+        
+        % update the time info and initial state for ode45
+        lenX = lenX + n-1;
+        tspan = t(n) : tstep : t(n)+t_evmax;
+        x0 = x(n, :);        
+        
+        % If the point mass falls on the ground, stop the simulation.
+        if (size(te,1)>0) && (ie==2)
+            break;
+            
         % If it's leaving the ground, switch to flight phase.
-        if x(n,3) - L*cos(x(n,5)) > 0  % Use "spring length > L" instead?
+        elseif (size(te,1)>0) && (thrust_flag==1)
             phase = 0;
             thrust_flag = 0;
             % print
             display('switch to flight phase');
             
             % transition info and plot
-            t_prev_stance = tspan(1) - prev_t;
+            t_prev_stance = t(n) - prev_t;
             if fflag
                 hold on;
-                fp(1) = fill([prev_t prev_t tspan(1) tspan(1)],[-line_height,line_height,line_height,-line_height], [0.9 0.9 0.9], 'EdgeColor',[0.9 0.9 0.9]);
+                fp(1) = fill([prev_t prev_t t(n) t(n)],[-line_height,line_height,line_height,-line_height], [0.9 0.9 0.9], 'EdgeColor',[0.9 0.9 0.9]);
                 hold off;
             end
-        elseif (thrust_flag == 0) && (x(n,3) > x(1,3))
+            
+        % If it reaches the lowest hieght, switch to thrust phase.
+        elseif (size(te,1)>0) && (thrust_flag == 0)
             thrust_flag = 1;
             % print
             display('switch to stance thrust phase');
             
-            % calculate the energy and spring at lowest height
-            l_spr_low = rms([x(n,1);x(n,3)]-contact_pos);
-            E = m*g*x(n,3) + 0.5*m*(x(n,2)^2+x(n,4)^2) + 0.5*k*(l_spr_low - L)^2;
-        end
-        
-        % If it hits the ground, stop the simulation.
-        if x(n,3) < 0
-            i_loop = total_loop;
+            % calculate spring length and energy at lowest height
+            L_low = sum(([x(n,1);x(n,3)]-contact_pos).^2)^0.5;   
+            E_low = m*g*x(n,3) + 0.5*m*(x(n,2)^2+x(n,4)^2) + 0.5*k*(L_low - L)^2;
+            % calculate desired energy
+            dL = abs(-x_td(2)*sin(x_td(5))+x_td(4)*cos(x_td(5)));
+            E_des = m*g*H + pi/4*d*dL*(L-L_low) + 0.5*m*dx_des^2;
         end
     end
 
-    %display(i_loop);
-    i_loop = i_loop + 1;
 end
+
+%%%% TODO: In order to make the time in the video super accurate, 
+%%%%       we should record the output every 0.01 second. 
+%%%%       So don't assign the event time to the output (both X and T)
+%%%%       (although we can assign it to another variable).
+%%%% FYI: frame rate is decided by "vidObj.FrameRate"
 
 %% Trajectary Plot
 if fflag
@@ -204,15 +241,14 @@ if fflag
         hold off;
     end
         
-    tspan = 0:tstep:total_time;
     hold on;
-    fp(2) = plot(tspan,X(:,1),'b','LineWidth',2);
-    fp(3) = plot(tspan,X(:,2),'r','LineWidth',2);
-    fp(4) = plot(tspan,X(:,3),'g','LineWidth',2);
-    fp(5) = plot(tspan,X(:,4),'k','LineWidth',2);
-    fp(6) = plot(tspan,X(:,5),'m','LineWidth',2);
-    fp(7) = plot(tspan,X(:,6),'c','LineWidth',2);
-    fp(8) = plot([tspan(1) tspan(total_time/tstep+1)], [target_pos target_pos],'r--','LineWidth',1);
+    fp(2) = plot(T,X(:,1),'b','LineWidth',2);
+    fp(3) = plot(T,X(:,2),'r','LineWidth',2);
+    fp(4) = plot(T,X(:,3),'g','LineWidth',2);
+    fp(5) = plot(T,X(:,4),'k','LineWidth',2);
+    fp(6) = plot(T,X(:,5),'m','LineWidth',2);
+    fp(7) = plot(T,X(:,6),'c','LineWidth',2);
+    fp(8) = plot([T(1) T(size(T,1))], [target_pos target_pos],'r--','LineWidth',1);
     hold off
     
     if d == 0
@@ -221,17 +257,19 @@ if fflag
         title('\fontsize{12}\fontname{Arial Black}SLIP with Damping (2D)')        
     end
     legend(fp([1 2 3 4 5 6 7 8]), 'stance phase',...
-        'xPos (m)', 'xVel (m/s)', 'yPos (m)', 'yVel (m/s)',...
+        'xPos (m)',...
+        'xVel (m/s)', 'yPos (m)', 'yVel (m/s)',...
         'phi (rad)', 'dphi (rad/s)', 'xPos_{des} (m/s)');
     xlabel('\fontsize{10}\fontname{Arial Black} Time(s)');
     text(1,9,['\fontsize{10}\fontname{Arial Black}kp_{pos}: ' num2str(k_f(1),'%1.2f')], 'Color','red');
     text(1,8.5,['\fontsize{10}\fontname{Arial Black}kp_{rai} : ' num2str(k_f(2),'%1.2f')], 'Color','red');
     
     figure;
-    plot(tspan,X(:,5),'m','LineWidth',2);hold on;
-    plot(tspan,X(:,6),'c','LineWidth',2);
+    plot(T,X(:,5),'m','LineWidth',2);hold on;
+    plot(T,X(:,6),'c','LineWidth',2);
     legend('phi (rad)', 'dphi (rad/s)');
     title('\fontsize{12}\fontname{Arial Black}Angle plot');
+    axis([0 T(size(T,1)) -3.5 3.5]);
     
     figure;
     plot(X(:,1),X(:,3),'b','LineWidth',2);
@@ -248,7 +286,7 @@ Vmin = min(X(:,2));
 
 % position plot window size
 if aflag
-    dt = (total_time-0)/8;
+    dt = (Tf-0)/8;
     ndt = floor(dt/tstep);   % number of time increments displayed in window
     h=figure(fignum); clf
     set(h,'Position',[0 0 1000 400]);
@@ -259,7 +297,7 @@ if aflag
     % step through each time increment and plot results
     if vflag
         vidObj = VideoWriter(moviename);
-        vidObj.FrameRate = length(T)/(total_time-0);
+        vidObj.FrameRate = length(T)/(Tf-0);
         open(vidObj);
         F(length(T)).cdata = []; F(length(T)).colormap = []; % preallocate
     end
@@ -315,7 +353,7 @@ if aflag
             %%%%% Plot position trajectory (2nd subfigure)%%%%
             subplot(1,3,2);
             subplot('Position',[0.40 0.34 0.125 0.42]); hold on
-            axis([-dt dt -0.1 X0(1)+0.1])
+            axis([-dt dt -0.1 X(1,1)+0.1])
 
             % obtain time history for position to current time
             if (ti-ndt) >= 1 
@@ -330,7 +368,7 @@ if aflag
             th = T(thi);
             % plot position time history 
             plot(th,x2h,'b-','LineWidth',3); hold on
-            axis([(tc-dt) (tc+dt) -0.1 X0(1)+0.1])
+            axis([(tc-dt) (tc+dt) -0.1 X(1,1)+0.1])
             % plot marker
             plot(tc,x1,'k+','MarkerSize',18,'LineWidth',2)
             plot(tc,x1,'ko','MarkerSize',10,'LineWidth',2)
