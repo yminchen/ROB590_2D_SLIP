@@ -44,7 +44,7 @@ E_low = 0;          % SLIP energy at lowest point (initialized to be 0)
 E_des = 0;          % SLIP desired energy (initialized to be 0)
 L_low = 0;          % spring length when mass reaches lowest height 
 x_td = 0;           % state vector at previous touchdown 
-prev_t =0;
+prev_t = 0;
 % position controller parameters
 kp_pos = 2;       
         % kp_pos depends on max_dx_des.
@@ -59,7 +59,7 @@ k_f = [kp_pos kd_pos kp_rai];  % f stands for flight
 
 % simulation parameters
 T0 = 0;
-Tf = 15;
+Tf = 9;
 % ode45 events parameters
 t_evmax = 1;
 % initial simulation parameters
@@ -90,7 +90,7 @@ contact_pos = zeros(2,1);
 phase = 0;          % 0: flight phase 
                     % 1: stance phase
                     
-% output parameters        
+% output value        
 T = zeros(0,0);     % t_output (will have one column)
 T(1,1) = T0;
 X = zeros(0,0);     % x_output (will have six columns)
@@ -120,7 +120,7 @@ while T(size(T,1)) < Tf
         % assign output
         X(lenX:lenX+n-1, :) = x;
         T(lenX:lenX+n-1, :) = t;
-
+        
         % update the time info and initial state for ode45
         lenX = lenX + n-1;
         tspan = t(n) : tstep : t(n)+t_evmax;
@@ -282,7 +282,7 @@ if fflag
     legend(fp([1 2 3 4 5 6 7 8]), 'stance phase',...
         'xPos (m)',...
         'xVel (m/s)', 'yPos (m)', 'yVel (m/s)',...
-        'phi (rad)', 'dphi (rad/s)', 'xPos_{des} (m/s)');
+        'phi (rad)', 'dphi (rad/s)', 'xPos_{des} (m)');
     xlabel('\fontsize{10}\fontname{Arial Black} Time(s)');
     text(1,9,['\fontsize{10}\fontname{Arial Black}kp_{pos}: ' num2str(k_f(1),'%1.2f')], 'Color','red');
     text(1,8.5,['\fontsize{10}\fontname{Arial Black}kd_{pos} : ' num2str(k_f(2),'%1.2f')], 'Color','red');
@@ -297,7 +297,7 @@ if fflag
     axis([0 T(size(T,1)) -2 2]);
     
     figure;
-    plot(X(:,1),X(:,3),'b','LineWidth',2);
+    plot(X(:,1),X(:,3),'b','LineWidth',2); 
     title('\fontsize{12}\fontname{Arial Black}Trajectory of 2D SLIP');
     ylabel('\fontsize{10}\fontname{Arial Black} (m)');
     xlabel('\fontsize{10}\fontname{Arial Black} (m)');

@@ -17,7 +17,7 @@ elseif dx_des<-max_dx_des
     dx_des = -max_dx_des;
 end
 
-%dx_des = 2; % for tuning kp_rai
+% dx_des = 2; % for tuning kp_rai
 
 % Raibert style controller parameters
 kp_rai = k_f(3);
